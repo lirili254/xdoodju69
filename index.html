@@ -212,6 +212,29 @@ h3 {
   </div>
 
   <script>
+    // Mock pose ของ "ท่ายืน" (สามารถแก้ไขจุดต่างๆ ได้ภายหลัง)
+const exampleStandPose = {
+  keypoints: [
+    { position: { x: 250, y: 100 }, score: 1 }, // Nose
+    { position: { x: 230, y: 90 }, score: 1 },  // Left Eye
+    { position: { x: 270, y: 90 }, score: 1 },  // Right Eye
+    { position: { x: 220, y: 100 }, score: 1 }, // Left Ear
+    { position: { x: 280, y: 100 }, score: 1 }, // Right Ear
+    { position: { x: 200, y: 150 }, score: 1 }, // Left Shoulder
+    { position: { x: 300, y: 150 }, score: 1 }, // Right Shoulder
+    { position: { x: 180, y: 220 }, score: 1 }, // Left Elbow
+    { position: { x: 320, y: 220 }, score: 1 }, // Right Elbow
+    { position: { x: 160, y: 300 }, score: 1 }, // Left Wrist
+    { position: { x: 340, y: 300 }, score: 1 }, // Right Wrist
+    { position: { x: 200, y: 300 }, score: 1 }, // Left Hip
+    { position: { x: 300, y: 300 }, score: 1 }, // Right Hip
+    { position: { x: 180, y: 400 }, score: 1 }, // Left Knee
+    { position: { x: 320, y: 400 }, score: 1 }, // Right Knee
+    { position: { x: 160, y: 480 }, score: 1 }, // Left Ankle
+    { position: { x: 340, y: 480 }, score: 1 }, // Right Ankle
+  ]
+};
+
     const URL = "./my_model/"; // เปลี่ยน path ตามโมเดลของคุณ
     let model, webcam, ctx, labelContainer, maxPredictions;
     let animationId, countdownTimer, captureTimer;
@@ -283,52 +306,63 @@ countdownTimer = setInterval(() => {
 }, 1000);
 
     }
+async function predict() {
+  const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+  const prediction = await model.predict(posenetOutput);
 
-    async function predict() {
-      const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
-      const prediction = await model.predict(posenetOutput);
+  labelContainer.innerHTML = "";
+  let highestProb = 0;
+  let predictedClass = "";
 
-      labelContainer.innerHTML = "";
-      for (let i = 0; i < maxPredictions; i++) {
-        const className = prediction[i].className.toLowerCase();
-        const prob = prediction[i].probability;
+  for (let i = 0; i < maxPredictions; i++) {
+    const className = prediction[i].className.toLowerCase();
+    const prob = prediction[i].probability;
 
-        if (className === "sitdown") sitCount += prob;
-        if (className === "standup") standCount += prob;
+    if (className === "sitdown") sitCount += prob;
+    if (className === "standup") standCount += prob;
 
-        const container = document.createElement("div");
-        container.className = "progress-bar-container";
-
-                const label = document.createElement("div");
-        label.textContent = className === "sitdown" ? "นั่ง" : "ยืน";
-        label.style.fontWeight = "bold";
-        label.style.marginBottom = "10px";
-
-        const progressBar = document.createElement("div");
-        progressBar.className = "progress-bar";
-
-        const progressBarFill = document.createElement("div");
-        progressBarFill.className = "progress-bar-fill";
-        progressBarFill.style.width = (prob * 100).toFixed(0) + "%";
-        progressBarFill.style.backgroundColor = className === "sitdown" ? "#e53935" : "#4caf50";
-
-        progressBar.appendChild(progressBarFill);
-
-        const progressText = document.createElement("div");
-        progressText.className = "progress-text";
-        progressText.textContent = (prob * 100).toFixed(0) + "%";
-
-        container.appendChild(label);
-        container.appendChild(progressBar);
-        container.appendChild(progressText);
-
-        labelContainer.appendChild(container);
-      }
-
-      drawPose(pose);
+    if (prob > highestProb) {
+      highestProb = prob;
+      predictedClass = className;
     }
 
-    function calculateAverage() {
+    const container = document.createElement("div");
+    container.className = "progress-bar-container";
+
+    const label = document.createElement("div");
+    label.textContent = className === "sitdown" ? "นั่ง" : "ยืน";
+    label.style.fontWeight = "bold";
+    label.style.marginBottom = "10px";
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "progress-bar";
+
+    const progressBarFill = document.createElement("div");
+    progressBarFill.className = "progress-bar-fill";
+    progressBarFill.style.width = (prob * 100).toFixed(0) + "%";
+    progressBarFill.style.backgroundColor = className === "sitdown" ? "#e53935" : "#4caf50";
+
+    progressBar.appendChild(progressBarFill);
+
+    const progressText = document.createElement("div");
+    progressText.className = "progress-text";
+    progressText.textContent = (prob * 100).toFixed(0) + "%";
+
+    container.appendChild(label);
+    container.appendChild(progressBar);
+    container.appendChild(progressText);
+
+    labelContainer.appendChild(container);
+  }
+
+  
+
+  // เพิ่ม isWrong flag แล้วส่งให้ drawPose
+ drawPose(pose, predictedClass === "sitdown");
+
+}
+
+  function calculateAverage() {
   const totalSit = sitCount;
   const totalStand = standCount;
   const total = totalSit + totalStand;
@@ -345,16 +379,59 @@ countdownTimer = setInterval(() => {
   averageEl.textContent = `ค่าเฉลี่ยการนั่ง: ${sitPercent.toFixed(0)}% | ค่าเฉลี่ยการยืน: ${standPercent.toFixed(0)}%`;
 }
 
-    function drawPose(pose) {
-      if (webcam.canvas) {
-        ctx.drawImage(webcam.canvas, 0, 0);
-        if (pose) {
-          const minPartConfidence = 0.5;
-          tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
-          tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+function drawPose(pose, isWrong = false) {
+  if (webcam.canvas) {
+    ctx.drawImage(webcam.canvas, 0, 0);
+
+    if (isWrong) {
+      const minConfidence = 0.5;
+      const color = "red";
+      const keypoints = exampleStandPose.keypoints;
+
+      // 🔴 วาดจุด
+      keypoints.forEach(kp => {
+        if (kp.score >= minConfidence) {
+          ctx.beginPath();
+          ctx.arc(kp.position.x, kp.position.y, 6, 0, 2 * Math.PI);
+          ctx.fillStyle = color;
+          ctx.fill();
         }
-      }
+      });
+
+      // 🔴 วาดเส้นเชื่อม (skeleton) — คู่ keypoint ที่เชื่อมกัน
+      const adjacentKeyPoints = [
+        [5, 6],  // shoulders
+        [5, 7], [7, 9], // left arm
+        [6, 8], [8,10], // right arm
+        [11,12], // hips
+        [11,13], [13,15], // left leg
+        [12,14], [14,16], // right leg
+        [5,11], [6,12] // torso
+      ];
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+
+      adjacentKeyPoints.forEach(([i, j]) => {
+        const kp1 = keypoints[i];
+        const kp2 = keypoints[j];
+
+        if (kp1.score >= minConfidence && kp2.score >= minConfidence) {
+          ctx.beginPath();
+          ctx.moveTo(kp1.position.x, kp1.position.y);
+          ctx.lineTo(kp2.position.x, kp2.position.y);
+          ctx.stroke();
+        }
+      });
     }
+  }
+}
+
+
+
+
+
+
 
     async function loop() {
       webcam.update();
